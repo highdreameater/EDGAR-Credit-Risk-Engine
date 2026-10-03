@@ -1,14 +1,34 @@
 # GLOBAL CORPORATE COUNTERPARTY RATING & LIMIT MONITORING ENGINE (GCCR)
+### Institutional Wholesale Credit Risk Analytics, SEC EDGAR Ingestion & Portfolio Governance Engine
 
 ![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)
 ![License: Institutional](https://img.shields.io/badge/License-Institutional-navy.svg)
-![Validation: RMG Basel Compliant](https://img.shields.io/badge/Validation-Basel%20III-emerald.svg)
+![Regulatory Alignment: Basel III / IRB](https://img.shields.io/badge/Regulatory%20Alignment-Basel%20III%20%2F%20IRB-emerald.svg)
 ![SEC EDGAR API: 10--K Ingest](https://img.shields.io/badge/SEC%20EDGAR-10--K%20XBRL-orange.svg)
+![Model Governance: SR 11--7 Compliant](https://img.shields.io/badge/Model%20Governance-SR%2011--7-purple.svg)
 
 ---
 
-### 1. Executive Summary & Vision
-The **Global Corporate Counterparty Rating & Limit Monitoring Engine (GCCR)** is an institutional credit risk analytics platform designed to automate wholesale credit workflows across global corporate sectors. The engine ingests multi-year public SEC EDGAR 10-K/10-Q corporate financial statements, engineers fundamental solvency and liquidity ratios, trains and calibrates Default Probability (PD) models, maps calibrated scores into master scale rating bands, tracks credit facility limit utilization, and runs macro-driven stress tests.
+### 1. Executive Summary & Strategic High-Level Impact
+
+#### The Strategic Problem in Wholesale Banking
+Global investment banks, commercial lenders, and asset managers deploy trillions of dollars in bilateral credit lines, syndicated loans, counterparty derivative facilities, and trade finance to corporate counterparties worldwide. Traditionally, wholesale credit assessment suffers from severe structural vulnerabilities:
+1. **Manual & Lagging Credit Reviews**: Credit underwriting teams manually parse 10-K filings and spreadsheets, causing rating assignments and credit reviews to lag deteriorating corporate fundamentals by months.
+2. **Disconnected Operational Silos**: Rating assignments (CRM), exposure tracking (CEM), and quantitative model governance (RMG) often operate in separate silos, leading to uncoordinated risk management.
+3. **Unmonitored Facility Drift & Limit Breaches**: In dynamic macro environments, counterparty drawdowns can silently breach sanctioned credit limits before credit committees are alerted, exposing institutions to uncollateralized tail risk.
+4. **Vulnerability to Macroeconomic Shocks**: Static annual ratings fail to predict how balance sheets will migrate during interest rate hikes, demand recessions, or stagflationary margin squeezes.
+
+#### What GCCR Solves: The Strategic Impact
+The **Global Corporate Counterparty Rating & Limit Monitoring Engine (GCCR)** transforms institutional wholesale credit risk from a fragmented, reactive process into an **automated, continuous, and quantitatively governed risk operating system**:
+
+* **Automated Direct Filing Ingestion**: Connects directly to the **official SEC EDGAR XBRL REST API**, replacing manual balance sheet extraction with audited, real-time corporate financial filings across public global issuers.
+* **Objective, Calibrated Default Probability ($PD$)**: Implements Basel III Internal Ratings-Based (IRB) compliant scorecard models equipped with **Platt Scaling (logistic sigmoidal calibration)**, producing mathematically rigorous, out-of-fold calibrated 1-year default probabilities.
+* **Unified Stakeholder Operating Architecture**:
+  * **Credit Risk Management (CRM)**: Standardizes counterparty underwriting by translating multi-year solvency and liquidity metrics into an 8-band Master Scale ($AAA$ to $CCC$) and Investment Grade (IG) vs. High Yield (HY) classifications.
+  * **Credit Exposure Management (CEM)**: Implements automated limit surveillance with early-warning alerts ($85\% \le \text{utilization} \le 100\%$) and instantaneous breach flags ($>100\%$) with excess exposure dollar tracking.
+  * **Risk Methodologies Group (RMG)**: Enforces model risk governance under Federal Reserve SR 11-7 standards, executing continuous discriminatory power checks (ROC-AUC, Gini, KS), calibration accuracy (Brier Score), and population distribution drift (PSI).
+* **CCAR/DFAST-Style Macroeconomic Stress Testing**: Simulates multi-sector macroeconomic shocks (e.g., Severe Global Recession, Aggressive Rate Hikes, Margin Compression) to project portfolio Expected Loss ($\Delta EL$) and compute post-stress rating migration transition matrices.
+* **Board & Executive Transparency**: A unified, institutional Streamlit executive console that provides credit committees and CROs with real-time portfolio health, sector concentrations, and stress resilience.
 
 ---
 
@@ -16,8 +36,8 @@ The **Global Corporate Counterparty Rating & Limit Monitoring Engine (GCCR)** is
 
 ```
                    +-------------------------------------------------+
-                   |  SEC EDGAR API / SEC Fact JSONs / Kaggle Ratios  |
-                   |  (10-K / 10-Q Public Corporate Filings)         |
+                   |  SEC EDGAR API / SEC Fact JSONs / 10-K Filings   |
+                   |  (Official U.S. SEC XBRL Corporate Submissions) |
                    +-------------------------------------------------+
                                            |
                                            v
@@ -76,54 +96,56 @@ The **Global Corporate Counterparty Rating & Limit Monitoring Engine (GCCR)** is
 ### 3. Quantitative Formulations
 
 #### A. Fundamental Financial Ratios
-* **Interest Coverage Ratio (ICR)**:
+* **Interest Coverage Ratio (ICR)**: Measures debt service capacity from core operations:
   $$\text{ICR} = \frac{\text{EBIT}}{\max(|\text{Interest Expense}|, 10^{-5})}$$
-* **Leverage Ratio**:
+* **Leverage Ratio (Debt-to-EBITDA)**: Quantifies payback horizon based on operating cash earnings:
   $$\text{Debt-to-EBITDA} = \frac{\text{Total Debt}}{\max(\text{EBITDA}, 10^{-5})}$$
-* **Current Liquidity Ratio**:
+* **Current Liquidity Ratio**: Evaluates near-term working capital coverage:
   $$\text{Current Ratio} = \frac{\text{Current Assets}}{\max(\text{Current Liabilities}, 10^{-5})}$$
-* **Operating Cash Flow Solvency Ratio**:
+* **Operating Cash Flow Solvency Ratio**: Evaluates cash-generative capability relative to total obligations:
   $$\text{OCF-to-Debt} = \frac{\text{Operating Cash Flow}}{\max(\text{Total Debt}, 10^{-5})}$$
-* **Altman Z-Score Model (Corporate Manufacturing & General Firms)**:
+* **Operating Profit Margin**:
+  $$\text{Operating Margin} = \frac{\text{EBIT}}{\max(\text{Revenue}, 10^{-5})}$$
+* **Altman Z-Score Model (Corporate Manufacturing & General Firms)**: Composite multi-factor distress indicator:
   $$Z = 1.2 X_1 + 1.4 X_2 + 3.3 X_3 + 0.6 X_4 + 0.999 X_5$$
-  * $X_1 = (\text{Current Assets} - \text{Current Liabilities}) / \text{Total Assets}$
-  * $X_2 = \text{Retained Earnings} / \text{Total Assets}$
-  * $X_3 = \text{EBIT} / \text{Total Assets}$
-  * $X_4 = \text{Market Value of Equity} / \text{Total Liabilities}$
-  * $X_5 = \text{Revenue} / \text{Total Assets}$
+  * $X_1 = (\text{Current Assets} - \text{Current Liabilities}) / \text{Total Assets}$ (Working Capital / Total Assets)
+  * $X_2 = \text{Retained Earnings} / \text{Total Assets}$ (Cumulative Profitability / Total Assets)
+  * $X_3 = \text{EBIT} / \text{Total Assets}$ (Operating Productivity of Assets)
+  * $X_4 = \text{Market Value of Equity} / \text{Total Liabilities}$ (Market Leverage)
+  * $X_5 = \text{Revenue} / \text{Total Assets}$ (Asset Turnover Efficiency)
 
-#### B. Scorecard Calibration (Platt Scaling)
-* **Logistic Scorecard**:
+#### B. Probability of Default (PD) Modeling & Platt Calibration
+* **Logistic Regression Scorecard**:
   $$z_i = \beta_0 + \sum_{j=1}^K \beta_j X_{ij}$$
-* **Platt Scaling**:
+* **Platt Scaling (Sigmoidal Logistic Calibration)**: Fits parameters $A$ and $B$ via Maximum Likelihood Estimation on cross-validation holdouts to map raw scores into empirical default frequencies:
   $$PD_i = \frac{1}{1 + \exp(-(A \cdot z_i + B))}$$
-  where $A$ and $B$ are estimated via maximum likelihood on out-of-fold validation sets.
 
-#### C. RMG Model Validation Metrics & Thresholds
-* **Gini Coefficient**: $\text{Gini} = 2 \times \text{ROC-AUC} - 1$
-* **Kolmogorov-Smirnov (KS) Separation**:
+#### C. RMG Model Validation Metrics & Governance Thresholds
+* **Gini Coefficient**: Scaled measure of discrimination power:
+  $$\text{Gini} = 2 \times \text{ROC-AUC} - 1$$
+* **Kolmogorov-Smirnov (KS) Statistic**: Peak separation between default and non-default cumulative distributions:
   $$KS = \max_t |F_{\text{Default}}(t) - F_{\text{Non-Default}}(t)| \times 100\%$$
-* **Brier Score**:
+* **Brier Score (BS)**: Mean squared error of calibrated probability predictions:
   $$BS = \frac{1}{N}\sum_{i=1}^N (PD_i - y_i)^2$$
-* **Population Stability Index (PSI)**:
+* **Population Stability Index (PSI)**: Measures filing cohort and feature drift across time:
   $$PSI = \sum_{b=1}^B (\text{Actual}_b - \text{Expected}_b) \times \ln\left(\frac{\text{Actual}_b}{\text{Expected}_b}\right)$$
 
-| Metric Class | Target | Recalibration Trigger |
-| :--- | :--- | :--- |
-| **ROC-AUC** | $\ge 0.80$ | $< 0.72$ |
-| **Gini** | $\ge 0.60$ | $< 0.44$ |
-| **KS Stat** | $\ge 45.0\%$ | $< 35.0\%$ |
-| **Brier Score** | $\le 0.08$ | $> 0.15$ |
-| **PSI** | $< 0.10$ | $> 0.25$ |
+| Metric Class | Target | Recalibration Trigger | Business Rationale |
+| :--- | :--- | :--- | :--- |
+| **ROC-AUC** | $\ge 0.80$ | $< 0.72$ | Discriminatory ranking of healthy vs. distressed firms |
+| **Gini** | $\ge 0.60$ | $< 0.44$ | Basel IRB compliance for corporate rating models |
+| **KS Stat** | $\ge 45.0\%$ | $< 35.0\%$ | Maximum cut-off separation between performing & non-performing |
+| **Brier Score** | $\le 0.08$ | $> 0.15$ | Strict probability accuracy for capital allocation (EL) |
+| **PSI** | $< 0.10$ | $> 0.25$ | Detects population shift across credit cycles |
 
 #### D. Exposure Analytics & Stress Testing Formulations
 * **Counterparty Expected Loss**:
   $$EL_i = PD_i \times LGD_i \times EAD_i$$
 * **Credit Limit Utilization (%)**:
   $$\text{Utilization}_i = \left(\frac{EAD_i}{\text{Credit Limit}_i}\right) \times 100$$
-  * **Normal**: $< 85\%$
-  * **Warning**: $85\% \le \text{Utilization} \le 100\%$
-  * **BREACH**: $> 100\%$
+  * **Normal**: $< 85\%$ (Standard Facility Operation)
+  * **Warning**: $85\% \le \text{Utilization} \le 100\%$ (Watchlist Facility)
+  * **BREACH**: $> 100\%$ (Active Board Exception / CEM Freeze)
 * **Macro Stress Shift**:
   $$PD_{i,\text{stressed}} = \min(1.0, PD_{i,\text{baseline}} \times \text{Multiplier}_{S,\text{Sector}})$$
   $$LGD_{i,\text{stressed}} = \min(1.0, LGD_{i,\text{baseline}} + \Delta LGD_S)$$
@@ -131,7 +153,18 @@ The **Global Corporate Counterparty Rating & Limit Monitoring Engine (GCCR)** is
 
 ---
 
-### 4. Project Directory Structure
+### 4. Target Stakeholders & Enterprise Role Mapping
+
+| Institutional Role | Core Responsibilities | Engine Capability Mapping | Business Impact |
+| :--- | :--- | :--- | :--- |
+| **Credit Risk Management (CRM)** | Rating assignment, borrower financial analysis, underwriting approvals. | Ingests live SEC 10-K data, computes solvency metrics, maps calibrated PDs to 8 rating bands ($AAA$ to $CCC$). | Eliminates underwriting lag; creates consistent, audited rating decisions. |
+| **Credit Exposure Management (CEM)** | Portfolio exposure surveillance, facility limit control, concentration risk. | Computes facility utilization, triggers automated breach flags ($>100\%$), computes dollar excess exposure. | Prevents silent limit creep; eliminates uncollateralized over-allocation. |
+| **Risk Methodologies Group (RMG)** | Scorecard development, calibration, model validation, stress testing. | Calculates full validation suite (ROC, Gini, KS, Brier, PSI), executes macro stress test simulations. | Ensures SR 11-7 and Basel III regulatory model compliance. |
+| **Credit Committee & CRO** | Capital planning, board reporting, risk appetite oversight. | Executive Streamlit dashboard, portfolio Expected Loss aggregation, rating migration matrices. | Delivers instant visibility into wholesale portfolio health and crisis resilience. |
+
+---
+
+### 5. Project Directory Structure
 
 ```
 gccr_engine/
@@ -195,7 +228,7 @@ gccr_engine/
 
 ---
 
-### 5. Setup & Execution Guide
+### 6. Setup & Execution Guide
 
 #### Environment Setup (Conda)
 ```bash
@@ -208,7 +241,7 @@ pip install -r requirements.txt
 ```
 
 #### Fetch Live SEC EDGAR 10-K Financials
-To query the official SEC EDGAR XBRL API for public corporate counterparties:
+To query the official SEC EDGAR XBRL REST API for public corporate counterparties:
 ```bash
 python scripts/fetch_live_sec_edgar.py
 ```

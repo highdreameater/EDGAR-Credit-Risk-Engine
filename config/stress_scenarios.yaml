@@ -1,0 +1,42 @@
+scenarios:
+  global_recession:
+    name: "Severe Global Recession"
+    description: "Multi-quarter GDP contraction with severe demand compression across cyclical sectors."
+    pd_multipliers:
+      "Technology": 1.40
+      "Industrials": 1.90
+      "Consumer Goods": 1.60
+      "Energy": 2.10
+      "Healthcare": 1.15
+      "Telecom": 1.25
+      "Utilities": 1.10
+      "Basic Materials": 1.85
+    lgd_shift: 0.12
+
+  rate_hike_squeeze:
+    name: "Aggressive Interest Rate Hike (+300 bps)"
+    description: "Sharply higher debt service costs and debt refinancing headwinds hitting levered firms."
+    pd_multipliers:
+      "Technology": 1.70
+      "Industrials": 1.50
+      "Consumer Goods": 1.35
+      "Energy": 1.20
+      "Healthcare": 1.10
+      "Telecom": 1.40
+      "Utilities": 1.30
+      "Basic Materials": 1.45
+    lgd_shift: 0.08
+
+  margin_compression:
+    name: "Stagflationary Margin Compression"
+    description: "Elevated input inflation combined with sluggish top-line pricing elasticity."
+    pd_multipliers:
+      "Technology": 1.35
+      "Industrials": 1.75
+      "Consumer Goods": 1.80
+      "Energy": 1.10
+      "Healthcare": 1.20
+      "Telecom": 1.30
+      "Utilities": 1.25
+      "Basic Materials": 1.65
+    lgd_shift: 0.10

@@ -1,0 +1,31 @@
+features:
+  - icr
+  - debt_to_ebitda
+  - current_ratio
+  - ocf_to_debt
+  - operating_margin
+  - altman_z
+
+target_col: "target"
+
+model:
+  algorithm: "logistic_regression"  # "logistic_regression" or "xgboost"
+  random_state: 42
+  test_size: 0.25
+  calibration:
+    method: "sigmoid"  # Platt scaling
+    cv: 3
+
+validation:
+  psi_bins: 10
+  thresholds:
+    roc_auc_target: 0.80
+    roc_auc_trigger: 0.72
+    gini_target: 0.60
+    gini_trigger: 0.44
+    ks_stat_pct_target: 45.0
+    ks_stat_pct_trigger: 35.0
+    brier_score_target: 0.08
+    brier_score_trigger: 0.15
+    psi_stable: 0.10
+    psi_action: 0.25

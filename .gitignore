@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+gccr_env/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# Data outputs (optional caching)
+data/processed/*.parquet
+!data/processed/.gitkeep
+
+# IDE & OS
+.DS_Store
+.vscode/
+.idea/

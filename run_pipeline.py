@@ -30,10 +30,14 @@ def main():
     metrics = compute_rmg_validation_metrics(df_scored['target'], df_scored['pd_calibrated'])
     print(f"Validation -> ROC-AUC: {metrics['roc_auc']:.4f} | Gini: {metrics['gini']:.4f} | KS: {metrics['ks_stat_pct']:.2f}% | Brier: {metrics['brier_score']:.4f}")
     
-    print("=== [5/6] Rating Assignment, EL Calculation & Limit Check ===")
+    print("=== [5/6] Rating Assignment, EL & Basel III Capital/RWA Calculation ===")
     df_rated = assign_master_scale_ratings(df_scored, config_path="config/rating_bands.yaml")
     df_el = calculate_expected_loss(df_rated, exposures_path="data/portfolio/exposures_limits.csv")
     df_final = evaluate_limit_utilization(df_el)
+    
+    from src.risk.el_calculator import aggregate_portfolio_metrics
+    summary = aggregate_portfolio_metrics(df_final)
+    print(f"Basel III A-IRB -> Portfolio EAD: ${summary['total_ead']:,.1f}M | Expected Loss (EL): ${summary['total_expected_loss']:,.2f}M | Unexpected Loss (UL): ${summary['total_unexpected_loss']:,.2f}M | Total RWA: ${summary['total_rwa']:,.1f}M (Density: {summary['capital_density_pct']:.1f}%)")
     
     # Save Pipeline Outputs
     df_final.to_parquet("data/processed/model_predictions.parquet")

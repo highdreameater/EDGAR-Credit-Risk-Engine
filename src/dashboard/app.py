@@ -118,6 +118,9 @@ def load_data():
         run_pipeline.main()
         
     df = pd.read_parquet(pred_path)
+    if 'rwa' not in df.columns:
+        from src.risk.el_calculator import calculate_expected_loss
+        df = calculate_expected_loss(df, exposures_path=None)
     return df
 
 
@@ -140,7 +143,7 @@ st.markdown("""
 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.8rem; margin-bottom: 1.2rem;">
     <div>
         <div class="main-title">🏛️ GCCR | Global Corporate Counterparty Rating & Limit Monitoring Engine</div>
-        <div class="sub-title">Institutional Wholesale Credit Analytics • Real SEC EDGAR 10-K Ingestion • RMG Validation • CEM Breach Monitoring</div>
+        <div class="sub-title">Institutional Wholesale Credit Analytics • Real SEC EDGAR 10-K Ingestion • RMG Validation • CEM Breach Monitoring • Basel III A-IRB Capital Engine</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -169,7 +172,7 @@ st.sidebar.info(f"**Cohort Scope:**\n- Filtered Entities: **{filtered_df['cik'].
 
 # Operational Tabs
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Executive Portfolio Overview",
+    "📊 Executive Portfolio & Basel III Capital",
     "🛡️ RMG Model Validation Console",
     "⚠️ Limit Monitoring & Breach Console",
     "🌪️ Macro Stress-Testing Console"
@@ -177,12 +180,15 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 
 # =========================================================================
-# TAB 1: EXECUTIVE PORTFOLIO OVERVIEW
+# TAB 1: EXECUTIVE PORTFOLIO & BASEL III CAPITAL OVERVIEW
 # =========================================================================
 with tab1:
     # Key Metric Cards
     total_ead = filtered_df['ead'].sum()
     total_el = filtered_df['expected_loss'].sum()
+    total_ul = filtered_df['unexpected_loss'].sum() if 'unexpected_loss' in filtered_df.columns else 0.0
+    total_rwa = filtered_df['rwa'].sum() if 'rwa' in filtered_df.columns else 0.0
+    cap_density = (total_rwa / max(total_ead, 1e-5)) * 100.0
     breach_count = (filtered_df['status'] == 'BREACH').sum()
     warning_count = (filtered_df['status'] == 'Warning').sum()
     weighted_pd = (filtered_df['pd_calibrated'] * filtered_df['ead']).sum() / max(total_ead, 1e-5)
@@ -200,39 +206,39 @@ with tab1:
     with c2:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Total Expected Loss (EL)</div>
+            <div class="metric-label">Expected Loss (EL)</div>
             <div class="metric-val">${total_el:,.2f}M</div>
-            <div class="metric-delta" style="color: #F87171;">EL Rate: {(total_el/max(total_ead,1e-5))*100:.2f}%</div>
+            <div class="metric-delta" style="color: #F87171;">Provision Rate: {(total_el/max(total_ead,1e-5))*100:.2f}%</div>
         </div>
         """, unsafe_allow_html=True)
     with c3:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Limit Breaches (>100%)</div>
-            <div class="metric-val" style="color: {'#F87171' if breach_count > 0 else '#34D399'};">{breach_count}</div>
-            <div class="metric-delta" style="color: #FBBF24;">Warnings (85-100%): {warning_count}</div>
+            <div class="metric-label">Unexpected Loss (UL)</div>
+            <div class="metric-val">${total_ul:,.2f}M</div>
+            <div class="metric-delta" style="color: #F59E0B;">Economic Capital (99.9% VaR)</div>
         </div>
         """, unsafe_allow_html=True)
     with c4:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Weighted Average PD</div>
-            <div class="metric-val">{weighted_pd * 100:.2f}%</div>
-            <div class="metric-delta" style="color: #818CF8;">Calibrated 1-Yr PD</div>
+            <div class="metric-label">Basel III Total RWA</div>
+            <div class="metric-val">${total_rwa:,.1f}M</div>
+            <div class="metric-delta" style="color: #A78BFA;">Capital Density: {cap_density:.1f}%</div>
         </div>
         """, unsafe_allow_html=True)
     with c5:
         st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-label">Weighted Avg LGD</div>
-            <div class="metric-val">{weighted_lgd * 100:.1f}%</div>
-            <div class="metric-delta" style="color: #A78BFA;">Downturn LGD</div>
+            <div class="metric-label">Limit Surveillance</div>
+            <div class="metric-val" style="color: {'#F87171' if breach_count > 0 else '#34D399'};">{breach_count} Breaches</div>
+            <div class="metric-delta" style="color: #FBBF24;">Warnings (85-100%): {warning_count}</div>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("###")
     
-    col_chart1, col_chart2 = st.columns([1, 1])
+    col_chart1, col_chart2, col_chart3 = st.columns([1, 1, 1])
     with col_chart1:
         # Rating Band Distribution
         rating_counts = filtered_df['rating'].value_counts().reindex(all_ratings, fill_value=0).reset_index()
@@ -254,7 +260,7 @@ with tab1:
             paper_bgcolor="rgba(0,0,0,0)", 
             plot_bgcolor="rgba(0,0,0,0)",
             showlegend=False,
-            height=320
+            height=300
         )
         st.plotly_chart(fig_rating, use_container_width=True)
 
@@ -266,34 +272,66 @@ with tab1:
             names='sector', 
             values='ead', 
             hole=0.55,
-            title="Exposure at Default (EAD) by Sector Concentration",
+            title="Exposure at Default (EAD) by Sector",
             color_discrete_sequence=px.colors.qualitative.Dark24
         )
         fig_sector.update_layout(
             template="plotly_dark", 
             paper_bgcolor="rgba(0,0,0,0)", 
             plot_bgcolor="rgba(0,0,0,0)",
-            height=320
+            height=300
         )
         st.plotly_chart(fig_sector, use_container_width=True)
 
+    with col_chart3:
+        # Basel III RWA Allocation by Grade
+        if 'rwa' in filtered_df.columns:
+            grade_rwa = filtered_df.groupby('grade_type')['rwa'].sum().reset_index()
+            fig_rwa = px.bar(
+                grade_rwa,
+                x='grade_type',
+                y='rwa',
+                color='grade_type',
+                color_discrete_map={'Investment Grade': '#38BDF8', 'High Yield': '#F59E0B'},
+                title="Basel III RWA by Portfolio Tier ($M)"
+            )
+            fig_rwa.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                showlegend=False,
+                height=300
+            )
+            st.plotly_chart(fig_rwa, use_container_width=True)
+
     # Master Counterparty Grid
-    st.markdown("### 📋 Counterparty Master Exposure & Rating Grid")
+    st.markdown("### 📋 Counterparty Master Exposure, Rating & Basel Capital Grid")
     display_cols = [
         'cik', 'company_name', 'sector', 'fiscal_year', 'rating', 'grade_type',
-        'pd_calibrated', 'ead', 'credit_limit', 'utilization_pct', 'status', 'expected_loss'
+        'pd_calibrated', 'ead', 'credit_limit', 'utilization_pct', 'status', 
+        'expected_loss', 'unexpected_loss', 'rwa'
     ]
-    grid_df = filtered_df[display_cols].copy()
-    grid_df['pd_calibrated'] = (grid_df['pd_calibrated'] * 100).round(2).astype(str) + "%"
-    grid_df['utilization_pct'] = grid_df['utilization_pct'].round(1).astype(str) + "%"
-    grid_df['ead'] = "$" + grid_df['ead'].round(1).astype(str) + "M"
-    grid_df['credit_limit'] = "$" + grid_df['credit_limit'].round(1).astype(str) + "M"
-    grid_df['expected_loss'] = "$" + grid_df['expected_loss'].round(2).astype(str) + "M"
+    present_cols = [c for c in display_cols if c in filtered_df.columns]
+    grid_df = filtered_df[present_cols].copy()
+    if 'pd_calibrated' in grid_df.columns:
+        grid_df['pd_calibrated'] = (grid_df['pd_calibrated'] * 100).round(2).astype(str) + "%"
+    if 'utilization_pct' in grid_df.columns:
+        grid_df['utilization_pct'] = grid_df['utilization_pct'].round(1).astype(str) + "%"
+    if 'ead' in grid_df.columns:
+        grid_df['ead'] = "$" + grid_df['ead'].round(1).astype(str) + "M"
+    if 'credit_limit' in grid_df.columns:
+        grid_df['credit_limit'] = "$" + grid_df['credit_limit'].round(1).astype(str) + "M"
+    if 'expected_loss' in grid_df.columns:
+        grid_df['expected_loss'] = "$" + grid_df['expected_loss'].round(2).astype(str) + "M"
+    if 'unexpected_loss' in grid_df.columns:
+        grid_df['unexpected_loss'] = "$" + grid_df['unexpected_loss'].round(2).astype(str) + "M"
+    if 'rwa' in grid_df.columns:
+        grid_df['rwa'] = "$" + grid_df['rwa'].round(1).astype(str) + "M"
     
     st.dataframe(grid_df, use_container_width=True, height=280)
 
     # Counterparty Deep-Dive Expander
-    st.markdown("### 🔍 Counterparty Fundamental Deep-Dive")
+    st.markdown("### 🔍 Counterparty Fundamental & Capital Deep-Dive")
     c_names = sorted(filtered_df['company_name'].unique().tolist())
     if c_names:
         selected_firm = st.selectbox("Select Corporate Counterparty for Filing Inspection", c_names)
@@ -303,8 +341,10 @@ with tab1:
         with col_d1:
             st.markdown(f"**Entity:** {selected_firm} (CIK: `{firm_data['cik'].iloc[0]}`) | Sector: **{firm_data['sector'].iloc[0]}**")
             st.markdown(f"**Latest Assigned Rating:** `{firm_data['rating'].iloc[-1]}` ({firm_data['grade_type'].iloc[-1]})")
-            st.markdown(f"**Calibrated 1-Yr PD:** `{firm_data['pd_calibrated'].iloc[-1]}` | **Altman Z-Score:** `{firm_data['altman_z'].iloc[-1]:.2f}`")
+            st.markdown(f"**Calibrated 1-Yr PD:** `{(firm_data['pd_calibrated'].iloc[-1]*100):.2f}%` | **Altman Z-Score:** `{firm_data['altman_z'].iloc[-1]:.2f}`")
             st.markdown(f"**ICR:** `{firm_data['icr'].iloc[-1]:.2f}x` | **Debt-to-EBITDA:** `{firm_data['debt_to_ebitda'].iloc[-1]:.2f}x`")
+            if 'rwa' in firm_data.columns and 'unexpected_loss' in firm_data.columns:
+                st.markdown(f"**Basel Capital Req (K):** `{firm_data['capital_requirement_k'].iloc[-1]*100:.2f}%` | **RWA:** `${firm_data['rwa'].iloc[-1]:,.1f}M` | **Unexpected Loss:** `${firm_data['unexpected_loss'].iloc[-1]:,.2f}M`")
         with col_d2:
             fig_hist = px.line(
                 firm_data, 

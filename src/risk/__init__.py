@@ -7,7 +7,12 @@ from .rating_engine import (
 )
 from .el_calculator import (
     calculate_expected_loss,
-    aggregate_portfolio_metrics
+    aggregate_portfolio_metrics,
+    compute_basel_correlation,
+    compute_basel_maturity_adjustment,
+    compute_basel_capital_requirement,
+    BASEL_PD_FLOOR,
+    BASEL_DEFAULT_MATURITY
 )
 from .limit_monitor import (
     evaluate_limit_utilization,
@@ -28,6 +33,11 @@ __all__ = [
     "DEFAULT_RATING_BANDS",
     "calculate_expected_loss",
     "aggregate_portfolio_metrics",
+    "compute_basel_correlation",
+    "compute_basel_maturity_adjustment",
+    "compute_basel_capital_requirement",
+    "BASEL_PD_FLOOR",
+    "BASEL_DEFAULT_MATURITY",
     "evaluate_limit_utilization",
     "get_breach_summary",
     "get_sector_concentration",

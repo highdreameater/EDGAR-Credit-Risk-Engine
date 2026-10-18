@@ -130,6 +130,21 @@ def load_scenario_configs():
         return yaml.safe_load(f)['scenarios']
 
 
+@st.cache_resource
+def get_scoring_model():
+    """Caches fitted PD model for live underwriting."""
+    from src.models.pd_engine import train_and_calibrate_pd_model
+    feat_path = "data/processed/features_engineered.parquet"
+    if os.path.exists(feat_path):
+        df_feat = pd.read_parquet(feat_path)
+    else:
+        import run_pipeline
+        run_pipeline.main()
+        df_feat = pd.read_parquet(feat_path)
+    _, pd_model = train_and_calibrate_pd_model(df_feat)
+    return pd_model
+
+
 try:
     df_portfolio = load_data()
     scenarios_dict = load_scenario_configs()
@@ -171,11 +186,12 @@ st.sidebar.markdown("---")
 st.sidebar.info(f"**Cohort Scope:**\n- Filtered Entities: **{filtered_df['cik'].nunique()}**\n- Active Filings: **{len(filtered_df)}**")
 
 # Operational Tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Executive Portfolio & Basel III Capital",
     "🛡️ RMG Model Validation Console",
     "⚠️ Limit Monitoring & Breach Console",
-    "🌪️ Macro Stress-Testing Console"
+    "🌪️ Macro Stress-Testing Console",
+    "⚡ Live SEC Ticker Underwriting Sandbox"
 ])
 
 
@@ -663,3 +679,206 @@ with tab4:
             )
             fig_down.update_layout(template="plotly_dark", height=340, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_down, use_container_width=True)
+
+
+# =========================================================================
+# TAB 5: LIVE SEC TICKER UNDERWRITING SANDBOX
+# =========================================================================
+with tab5:
+    st.markdown("### ⚡ Live SEC EDGAR Corporate Underwriting Sandbox")
+    st.markdown("Query official SEC EDGAR 10-K company facts in real-time via the U.S. government XBRL REST API, engineer fundamental solvency ratios, score calibrated default probabilities ($PD$), assign Basel Master Scale ratings, and audit facility limit compliance.")
+
+    from src.data.edgar_loader import fetch_and_parse_live_filing, KNOWN_TICKERS, resolve_ticker_or_cik
+    from src.features.financial_ratios import compute_financial_ratios
+    from src.risk.rating_engine import assign_master_scale_ratings
+    from src.risk.el_calculator import calculate_expected_loss
+    from src.risk.limit_monitor import evaluate_limit_utilization
+
+    # Quick Select Options
+    preset_options = [
+        "BA (The Boeing Company)",
+        "TSLA (Tesla Inc.)",
+        "AAPL (Apple Inc.)",
+        "MSFT (Microsoft Corporation)",
+        "F (Ford Motor Company)",
+        "CAT (Caterpillar Inc.)",
+        "XOM (Exxon Mobil Corporation)",
+        "PFE (Pfizer Inc.)",
+        "T (AT&T Inc.)",
+        "NEE (NextEra Energy Inc.)",
+        "DOW (Dow Inc.)",
+        "SNAP (Snap Inc.)",
+        "Custom Ticker / CIK"
+    ]
+
+    col_u1, col_u2, col_u3, col_u4, col_u5 = st.columns([2, 1.5, 1.2, 1.2, 1.2])
+    with col_u1:
+        selected_preset = st.selectbox("Select Corporate Issuer", preset_options, index=0)
+    with col_u2:
+        custom_input = st.text_input("Or Enter Custom Ticker / CIK", placeholder="e.g. GE, NVDA, GM")
+    with col_u3:
+        input_ead = st.number_input("Proposed EAD ($M)", min_value=1.0, max_value=5000.0, value=75.0, step=5.0)
+    with col_u4:
+        input_limit = st.number_input("Approved Limit ($M)", min_value=1.0, max_value=5000.0, value=100.0, step=5.0)
+    with col_u5:
+        input_lgd = st.slider("Downturn LGD (%)", min_value=10, max_value=90, value=45, step=5) / 100.0
+
+    # Determine target ticker
+    if custom_input.strip():
+        target_symbol = custom_input.strip()
+    elif selected_preset != "Custom Ticker / CIK":
+        target_symbol = selected_preset.split(" ")[0]
+    else:
+        target_symbol = "BA"
+
+    btn_underwrite = st.button("🚀 Ingest Official SEC 10-K & Run Real-Time Underwriting", type="primary")
+
+    # Store in session state so results persist on re-renders
+    if "live_underwriting_result" not in st.session_state or btn_underwrite:
+        with st.spinner(f"Connecting to official U.S. SEC EDGAR API for '{target_symbol}' & extracting 10-K XBRL tags..."):
+            try:
+                # 1. Fetch live 10-K from SEC EDGAR
+                live_profile = fetch_and_parse_live_filing(target_symbol)
+                df_single = pd.DataFrame([live_profile])
+                
+                # 2. Compute Fundamental Ratios
+                df_with_ratios = compute_financial_ratios(df_single)
+                
+                # 3. Score through Calibrated Model
+                scoring_model = get_scoring_model()
+                df_with_ratios['pd_calibrated'] = scoring_model.predict_calibrated(df_with_ratios)
+                
+                # 4. Rating Assignment
+                df_with_rating = assign_master_scale_ratings(df_with_ratios)
+                
+                # 5. Basel III Capital & Limits
+                df_with_rating['ead'] = float(input_ead)
+                df_with_rating['credit_limit'] = float(input_limit)
+                df_with_rating['lgd'] = float(input_lgd)
+                
+                df_underwritten = calculate_expected_loss(df_with_rating, exposures_path=None)
+                df_underwritten = evaluate_limit_utilization(df_underwritten)
+                
+                st.session_state['live_underwriting_result'] = df_underwritten.iloc[0].to_dict()
+                st.session_state['live_underwriting_error'] = None
+            except Exception as err:
+                st.session_state['live_underwriting_error'] = str(err)
+                st.session_state['live_underwriting_result'] = None
+
+    if st.session_state.get('live_underwriting_error'):
+        st.error(f"❌ SEC Ingestion Error: {st.session_state['live_underwriting_error']}")
+    elif st.session_state.get('live_underwriting_result'):
+        res = st.session_state['live_underwriting_result']
+        
+        st.markdown("---")
+        
+        # Institutional Underwriting Verdict Banner
+        rating = res.get('rating', 'BBB')
+        grade = res.get('grade_type', 'Investment Grade')
+        status = res.get('status', 'Normal')
+        pd_pct = res.get('pd_calibrated', 0.0) * 100.0
+        util_pct = res.get('utilization_pct', 0.0)
+        excess = res.get('excess_exposure', 0.0)
+        
+        status_color = "#34D399" if status == "Normal" else ("#FBBF24" if status == "Warning" else "#F87171")
+        grade_color = "#38BDF8" if grade == "Investment Grade" else "#F59E0B"
+        
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 1.2rem 1.6rem; margin-bottom: 1.2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                <div>
+                    <span style="font-size: 1.45rem; font-weight: 700; color: #F8FAFC;">{res.get('company_name')}</span>
+                    <span style="font-size: 0.95rem; color: #94A3B8; margin-left: 0.6rem;">(Ticker: <code>{res.get('ticker')}</code> | CIK: <code>{res.get('cik')}</code> | Sector: <strong>{res.get('sector')}</strong>)</span>
+                    <div style="font-size: 0.82rem; color: #64748B; margin-top: 0.2rem;">
+                        Source: <strong>Official SEC EDGAR XBRL (10-K Filing, FY {res.get('fiscal_year')})</strong>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.8rem; margin-top: 0.4rem;">
+                    <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 0.4rem 1.0rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div style="font-size: 0.72rem; color: #94A3B8; text-transform: uppercase;">Assigned Rating</div>
+                        <div style="font-size: 1.35rem; font-weight: 700; color: {grade_color};">{rating} ({grade})</div>
+                    </div>
+                    <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 0.4rem 1.0rem; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                        <div style="font-size: 0.72rem; color: #94A3B8; text-transform: uppercase;">Limit Status</div>
+                        <div style="font-size: 1.35rem; font-weight: 700; color: {status_color};">{status} ({util_pct:.1f}%)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 4 Key Scorecard Cards
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Calibrated 1-Yr Default Prob (PD)</div>
+                <div class="metric-val">{pd_pct:.2f}%</div>
+                <div class="metric-delta" style="color: {grade_color};">Master Scale: Band {rating}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with k2:
+            altman = res.get('altman_z', 0.0)
+            z_zone = "Safe Zone" if altman > 2.99 else ("Grey Zone" if altman >= 1.81 else "Distress Zone")
+            z_color = "#34D399" if altman > 2.99 else ("#FBBF24" if altman >= 1.81 else "#F87171")
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Altman Z-Score</div>
+                <div class="metric-val" style="color: {z_color};">{altman:.2f}</div>
+                <div class="metric-delta" style="color: {z_color};">{z_zone}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with k3:
+            el_val = res.get('expected_loss', 0.0)
+            ul_val = res.get('unexpected_loss', 0.0)
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Expected Loss / Unexpected Loss</div>
+                <div class="metric-val">${el_val:,.2f}M / ${ul_val:,.2f}M</div>
+                <div class="metric-delta" style="color: #F59E0B;">Economic Capital (99.9% VaR)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with k4:
+            rwa_val = res.get('rwa', 0.0)
+            k_req = res.get('capital_requirement_k', 0.0) * 100.0
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Basel III RWA & Capital (K)</div>
+                <div class="metric-val">${rwa_val:,.1f}M</div>
+                <div class="metric-delta" style="color: #A78BFA;">Capital Requirement K: {k_req:.2f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("###")
+
+        # Two Detailed Inspection Columns
+        col_r1, col_r2 = st.columns([1, 1])
+        
+        with col_r1:
+            st.markdown("#### 📐 Fundamental Financial Ratios")
+            ratio_summary = [
+                {"Ratio Name": "Interest Coverage Ratio (ICR)", "Value": f"{res.get('icr', 0.0):.2f}x", "Wholesale Target": ">= 3.0x", "Health": "✅ Healthy" if res.get('icr', 0) >= 3.0 else "⚠️ Compressed"},
+                {"Ratio Name": "Debt-to-EBITDA", "Value": f"{res.get('debt_to_ebitda', 0.0):.2f}x", "Wholesale Target": "<= 3.5x", "Health": "✅ Healthy" if res.get('debt_to_ebitda', 0) <= 3.5 else "⚠️ Elevated"},
+                {"Ratio Name": "Current Liquidity Ratio", "Value": f"{res.get('current_ratio', 0.0):.2f}x", "Wholesale Target": ">= 1.2x", "Health": "✅ Adequate" if res.get('current_ratio', 0) >= 1.2 else "⚠️ Tight"},
+                {"Ratio Name": "OCF-to-Debt (Cash Solvency)", "Value": f"{res.get('ocf_to_debt', 0.0):.2f}x", "Wholesale Target": ">= 0.20x", "Health": "✅ Strong" if res.get('ocf_to_debt', 0) >= 0.20 else "⚠️ Weak"},
+                {"Ratio Name": "Operating Profit Margin", "Value": f"{res.get('operating_margin', 0.0)*100:.1f}%", "Wholesale Target": ">= 10.0%", "Health": "✅ Robust" if res.get('operating_margin', 0) >= 0.10 else "⚠️ Thin"},
+                {"Ratio Name": "Altman Z-Score", "Value": f"{res.get('altman_z', 0.0):.2f}", "Wholesale Target": "> 2.99", "Health": z_zone}
+            ]
+            st.table(pd.DataFrame(ratio_summary))
+            
+        with col_r2:
+            st.markdown("#### 📑 Reported SEC 10-K Balance Sheet Line Items")
+            statement_summary = [
+                {"Accounting Line Item": "Total Assets", "Reported Amount": f"${res.get('total_assets', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Total Liabilities", "Reported Amount": f"${res.get('total_liabilities', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Current Assets", "Reported Amount": f"${res.get('current_assets', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Current Liabilities", "Reported Amount": f"${res.get('current_liab', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Annual Revenue", "Reported Amount": f"${res.get('revenue', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Operating Income (EBIT)", "Reported Amount": f"${res.get('ebit', 0.0):,.1f}M"},
+                {"Accounting Line Item": "EBITDA (Operating Earnings)", "Reported Amount": f"${res.get('ebitda', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Total Financial Debt", "Reported Amount": f"${res.get('total_debt', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Operating Cash Flow", "Reported Amount": f"${res.get('operating_cf', 0.0):,.1f}M"},
+                {"Accounting Line Item": "Cumulative Retained Earnings", "Reported Amount": f"${res.get('retained_earning', 0.0):,.1f}M"}
+            ]
+            st.table(pd.DataFrame(statement_summary))
+

@@ -1,0 +1,67 @@
+{
+  "model_metadata": {
+    "algorithm": "logistic_regression",
+    "calibration_method": "sigmoid",
+    "feature_count": 6,
+    "features": [
+      "icr",
+      "debt_to_ebitda",
+      "current_ratio",
+      "ocf_to_debt",
+      "operating_margin",
+      "altman_z"
+    ]
+  },
+  "validation_metrics": {
+    "roc_auc": 0.7755819060166886,
+    "gini": 0.5511638120333773,
+    "ks_stat_pct": 49.538866930171274,
+    "brier_score": 0.0460918999054503
+  },
+  "portfolio_summary": {
+    "total_ead": 80749.69999999998,
+    "total_expected_loss": 2016.4578026456018,
+    "total_unexpected_loss": 9452.544394994551,
+    "total_rwa": 118156.80493743191,
+    "total_regulatory_capital": 9452.544394994553,
+    "capital_density_pct": 146.32476026218293,
+    "weighted_avg_pd": 0.059828632213901056,
+    "weighted_avg_lgd": 0.41490440085845526,
+    "counterparty_count": 218
+  },
+  "breach_summary": {
+    "total_counterparties": 218,
+    "breach_count": 20,
+    "warning_count": 35,
+    "normal_count": 163,
+    "total_excess_exposure": 1820.3000000000004,
+    "max_utilization_pct": 122.93943221130085,
+    "avg_utilization_pct": 72.3625919031172
+  },
+  "stress_testing": [
+    {
+      "scenario": "Baseline",
+      "portfolio_el": 2016.4578026456018,
+      "delta_el": 0.0,
+      "pct_increase": 0.0
+    },
+    {
+      "scenario": "Severe Global Recession",
+      "portfolio_el": 4014.0357276224554,
+      "delta_el": 1997.5779249768536,
+      "pct_increase": 99.06371074842342
+    },
+    {
+      "scenario": "Aggressive Interest Rate Hike (+300 bps)",
+      "portfolio_el": 3380.8365131596465,
+      "delta_el": 1364.3787105140448,
+      "pct_increase": 67.66215036704332
+    },
+    {
+      "scenario": "Stagflationary Margin Compression",
+      "portfolio_el": 3691.5757642659046,
+      "delta_el": 1675.1179616203028,
+      "pct_increase": 83.07230428638479
+    }
+  ]
+}

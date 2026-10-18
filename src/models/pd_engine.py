@@ -5,7 +5,7 @@ Platt Scaling (Logistic Sigmoidal Calibration) or Isotonic Calibration.
 """
 
 import os
-from typing import Tuple, Optional, Dict, Any, List
+from typing import Tuple, Optional, Dict, Any, List, Union
 import yaml
 import numpy as np
 import pandas as pd
@@ -29,7 +29,8 @@ DEFAULT_FEATURES = [
 class CreditScorecardModel:
     """
     Wrapper for calibrated credit default probability model.
-    Provides feature coefficients/importance, uncalibrated score, and calibrated 1-year PD.
+    Provides feature coefficients/importance, uncalibrated score, calibrated 1-year PD,
+    scorecard waterfall explainability, and joblib serialization.
     """
     def __init__(
         self,
@@ -61,6 +62,81 @@ class CreditScorecardModel:
             importances = model_step.feature_importances_
             return dict(zip(self.feature_names, [float(i) for i in importances]))
         return {feat: 0.0 for feat in self.feature_names}
+
+    def explain_counterparty_score(self, sample_row: Union[pd.DataFrame, pd.Series]) -> Dict[str, Any]:
+        """
+        Decomposes the model score into transparent feature contributions.
+        For Logistic Regression: logit contributions Z_j * beta_j relative to base intercept.
+        For XGBoost: normalized tree attribution.
+        Returns waterfall components suitable for regulatory audit and visual plotting.
+        """
+        if isinstance(sample_row, pd.Series):
+            df_row = sample_row.to_frame().T
+        elif isinstance(sample_row, pd.DataFrame):
+            df_row = sample_row.iloc[0:1]
+        else:
+            df_row = pd.DataFrame([sample_row])
+
+        X = df_row[self.feature_names]
+        calibrated_pd = float(self.predict_calibrated(X)[0])
+        uncalibrated_pd = float(self.predict_uncalibrated(X)[0])
+
+        model_step = self.pipeline.named_steps.get('model')
+        scaler = self.pipeline.named_steps.get('scaler')
+
+        contributions = []
+        intercept = 0.0
+
+        if hasattr(model_step, 'coef_') and scaler is not None:
+            intercept = float(model_step.intercept_[0]) if hasattr(model_step, 'intercept_') else 0.0
+            coefs = model_step.coef_[0]
+            scaled_vals = scaler.transform(X)[0]
+            raw_vals = X.iloc[0].values
+
+            for feat, raw_v, scaled_v, coef in zip(self.feature_names, raw_vals, scaled_vals, coefs):
+                contrib = float(scaled_v * coef)
+                contributions.append({
+                    "feature": feat,
+                    "value": float(raw_v),
+                    "scaled_z": float(scaled_v),
+                    "coefficient": float(coef),
+                    "contribution": contrib,
+                    "risk_impact": "Increases Risk" if contrib > 0 else "Decreases Risk"
+                })
+        elif hasattr(model_step, 'feature_importances_'):
+            importances = model_step.feature_importances_
+            raw_vals = X.iloc[0].values
+            for feat, raw_v, imp in zip(self.feature_names, raw_vals, importances):
+                contrib = float(imp * (raw_v / (abs(raw_v) + 1.0)))
+                contributions.append({
+                    "feature": feat,
+                    "value": float(raw_v),
+                    "scaled_z": 0.0,
+                    "coefficient": float(imp),
+                    "contribution": contrib,
+                    "risk_impact": "Increases Risk" if contrib > 0 else "Decreases Risk"
+                })
+
+        return {
+            "intercept": intercept,
+            "feature_contributions": contributions,
+            "uncalibrated_pd": uncalibrated_pd,
+            "calibrated_pd": calibrated_pd
+        }
+
+    def save(self, filepath: str) -> None:
+        """Serializes trained scorecard model to disk via joblib."""
+        import joblib
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        joblib.dump(self, filepath)
+
+    @classmethod
+    def load(cls, filepath: str) -> 'CreditScorecardModel':
+        """Loads serialized scorecard model from disk."""
+        import joblib
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Model artifact not found at: {filepath}")
+        return joblib.load(filepath)
 
 
 def train_and_calibrate_pd_model(

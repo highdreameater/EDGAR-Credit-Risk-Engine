@@ -16,6 +16,7 @@ gccr_env/
 
 # Data outputs (optional caching)
 data/processed/*.parquet
+data/processed/*.joblib
 !data/processed/.gitkeep
 
 # IDE & OS

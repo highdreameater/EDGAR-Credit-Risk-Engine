@@ -132,8 +132,15 @@ def load_scenario_configs():
 
 @st.cache_resource
 def get_scoring_model():
-    """Caches fitted PD model for live underwriting."""
-    from src.models.pd_engine import train_and_calibrate_pd_model
+    """Caches fitted PD model for live underwriting, loading saved artifact if available."""
+    from src.models.pd_engine import CreditScorecardModel, train_and_calibrate_pd_model
+    model_path = "data/processed/calibrated_pd_model.joblib"
+    if os.path.exists(model_path):
+        try:
+            return CreditScorecardModel.load(model_path)
+        except Exception:
+            pass
+            
     feat_path = "data/processed/features_engineered.parquet"
     if os.path.exists(feat_path):
         df_feat = pd.read_parquet(feat_path)
@@ -142,7 +149,51 @@ def get_scoring_model():
         run_pipeline.main()
         df_feat = pd.read_parquet(feat_path)
     _, pd_model = train_and_calibrate_pd_model(df_feat)
+    pd_model.save(model_path)
     return pd_model
+
+
+def build_waterfall_chart(explanation: Dict[str, Any], title: str = "Scorecard Risk Factor Attribution") -> go.Figure:
+    """Builds Plotly Waterfall chart visualizing logit risk attributions under SR 11-7."""
+    x_labels = ["Base Intercept"]
+    y_vals = [explanation["intercept"]]
+    text_labels = [f"{explanation['intercept']:+.2f}"]
+    
+    for f in explanation["feature_contributions"]:
+        x_labels.append(f["feature"].upper())
+        y_vals.append(f["contribution"])
+        text_labels.append(f"{f['contribution']:+.2f}")
+        
+    x_labels.append("Final Logit")
+    y_vals.append(None)
+    total_val = explanation["intercept"] + sum(f["contribution"] for f in explanation["feature_contributions"])
+    text_labels.append(f"{total_val:.2f}")
+    
+    measures = ["relative"] * (len(y_vals) - 1) + ["total"]
+    
+    fig = go.Figure(go.Waterfall(
+        name="Logit Attribution",
+        orientation="v",
+        measure=measures,
+        x=x_labels,
+        y=y_vals,
+        text=text_labels,
+        textposition="outside",
+        connector={"line": {"color": "rgba(255, 255, 255, 0.2)"}},
+        increasing={"marker": {"color": "#EF4444"}},
+        decreasing={"marker": {"color": "#10B981"}},
+        totals={"marker": {"color": "#38BDF8"}}
+    ))
+    fig.update_layout(
+        title=title,
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=300,
+        showlegend=False,
+        yaxis_title="Log-Odds Impact"
+    )
+    return fig
 
 
 try:
@@ -371,6 +422,14 @@ with tab1:
             )
             fig_hist.update_layout(template="plotly_dark", height=240, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
             st.plotly_chart(fig_hist, use_container_width=True)
+
+        # Scorecard Risk Attribution Waterfall
+        st.markdown(f"#### 🔬 Model Scorecard Factor Attribution ({selected_firm})")
+        scoring_model = get_scoring_model()
+        latest_row = firm_data.iloc[-1]
+        exp_latest = scoring_model.explain_counterparty_score(latest_row)
+        fig_waterfall = build_waterfall_chart(exp_latest, title=f"Scorecard Risk Factor Attribution & Reason Codes (Latest 10-K, FY {latest_row['fiscal_year']})")
+        st.plotly_chart(fig_waterfall, use_container_width=True)
 
 
 # =========================================================================
@@ -881,4 +940,12 @@ with tab5:
                 {"Accounting Line Item": "Cumulative Retained Earnings", "Reported Amount": f"${res.get('retained_earning', 0.0):,.1f}M"}
             ]
             st.table(pd.DataFrame(statement_summary))
+
+        st.markdown("###")
+        st.markdown("#### 🔬 Quantitative Scorecard Factor Decomposition (SR 11-7 Reason Codes)")
+        scoring_model = get_scoring_model()
+        exp_live = scoring_model.explain_counterparty_score(pd.Series(res))
+        fig_live_wf = build_waterfall_chart(exp_live, title=f"Factor Attribution Waterfall: Log-Odds Impact on Calibrated PD ({res.get('company_name')})")
+        st.plotly_chart(fig_live_wf, use_container_width=True)
+
 

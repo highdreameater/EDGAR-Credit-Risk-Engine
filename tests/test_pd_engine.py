@@ -90,3 +90,35 @@ def test_psi_calculation():
     actual_p_shifted = np.random.beta(5, 5, 1000)
     psi_high = calculate_psi(baseline_p, actual_p_shifted, num_bins=10)
     assert psi_high > psi_low
+
+
+def test_scorecard_waterfall_explainability(synthetic_training_data):
+    _, model = train_and_calibrate_pd_model(synthetic_training_data)
+    sample = synthetic_training_data.iloc[0]
+    
+    explanation = model.explain_counterparty_score(sample)
+    
+    assert "intercept" in explanation
+    assert "feature_contributions" in explanation
+    assert "calibrated_pd" in explanation
+    assert len(explanation["feature_contributions"]) == len(model.feature_names)
+    
+    for item in explanation["feature_contributions"]:
+        assert "feature" in item
+        assert "contribution" in item
+        assert "risk_impact" in item
+
+
+def test_model_save_and_load(tmp_path, synthetic_training_data):
+    _, model = train_and_calibrate_pd_model(synthetic_training_data)
+    model_path = str(tmp_path / "model.joblib")
+    
+    model.save(model_path)
+    loaded_model = model.load(model_path)
+    
+    sample = synthetic_training_data.iloc[0:5]
+    orig_preds = model.predict_calibrated(sample)
+    loaded_preds = loaded_model.predict_calibrated(sample)
+    
+    assert np.allclose(orig_preds, loaded_preds)
+
